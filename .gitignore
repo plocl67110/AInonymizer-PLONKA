@@ -1,0 +1,32 @@
+# Build PyInstaller
+build/
+build_new/
+dist/
+dist_new/
+*.spec.bak
+
+# Environnements Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+env/
+
+# Documents traités — PEUVENT CONTENIR DE VRAIES PII, jamais committer
+input/*
+!input/.gitkeep
+output/
+
+# Fichiers de test personnels / documents réels uploadés pour debug
+*.pdf
+*.docx
+!README.md
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Résultats de tests locaux
+.pytest_cache/

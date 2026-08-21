@@ -1,0 +1,32 @@
+---
+Outil conçu par Claude PLONKA, inspiré des travaux de Florence Chatelot.
+text
+Copier
+
+
+
+
+
+
+---
+---
+---
+## **📌 Récapitulatif des Fichiers Modifiés/Créés**
+| **Fichier** | **Action** | **Description** |
+|-------------|------------|----------------|
+| `spacy_tools.py` | **Nouveau** | Module pour l'intégration de spaCy (détection NER). |
+| `anonymizer.py` | **Modifié** | Intégration de `find_spacy_entities()` dans `analyze()`. |
+| `juritools.py` | **Modifié** | Mise à jour de `resolve_overlaps()` pour gérer les priorités spaCy. |
+| `requirements.txt` | **Modifié** | Ajout de `spacy>=3.7.0` et `lxml>=4.9.0`. |
+| `test_spacy_tools.py` | **Nouveau** | Tests unitaires pour valider spaCy. |
+| `README.md` | **Modifié** | Documentation pour l'installation de spaCy. |
+
+---
+
+---
+---
+## **🚀 Prochaines Étapes**
+1. **Installer les dépendances** :
+   ```bash
+   pip install -r requirements.txt
+   python -m spacy download fr_core_news_sm
