@@ -47,6 +47,12 @@ class TestHardenedPII(unittest.TestCase):
         ms = resolve_overlaps(ms)
         self.assertTrue(any(m.category == "DATE_NAISSANCE" for m in ms))
 
+    def test_madame_nom_pas_avocat(self):
+        self.assertEqual(find_avocats("Madame Claire BERNARD expose que"), [])
+
+    def test_maitre_nom_avocat(self):
+        ms = find_avocats("Maître Sophie LEMAIRE, avocate")
+        self.assertTrue(any(m.text == "Sophie LEMAIRE" for m in ms))
 
 if __name__ == "__main__":
     unittest.main()

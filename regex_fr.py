@@ -1226,11 +1226,11 @@ def find_person_names(text: str) -> list[RawMatch]:
 _AVOCAT = [
 
     re.compile(
-        rf"(?i:Maître|Me)[ \t]+({_NAME})"
+        rf"\b(?i:Maître|Me)[ \t]+({_NAME})"
     ),
 
     re.compile(
-        rf"(?i:avocat|avocate|conseil)"
+        rf"\b(?i:avocat|avocate|conseil)"
         rf"[ \t]*:[ \t]*"
         rf"({_NAME})"
     ),
