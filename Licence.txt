@@ -1,32 +1,30 @@
+MIT License
+
+Copyright (c) 2026 Florence Chatelot (code de base, dépôt d'origine Miragide/AInonymizer)
+Copyright (c) 2026 Claude PLONKA (modifications : réécriture de regex_fr.py, intégration spaCy, tests, documentation)
+
+Permission est accordée, gratuitement, à toute personne obtenant une copie
+de ce logiciel et des fichiers de documentation associés (le « Logiciel »),
+de traiter le Logiciel sans restriction, y compris sans limitation les droits
+d'utiliser, de copier, de modifier, de fusionner, de publier, de distribuer,
+de sous-licencier et/ou de vendre des copies du Logiciel, et de permettre aux
+personnes auxquelles le Logiciel est fourni de le faire, sous réserve des
+conditions suivantes :
+
+La mention de droit d'auteur ci-dessus et la présente mention de permission
+doivent être incluses dans toutes les copies ou parties substantielles du
+Logiciel.
+
+LE LOGICIEL EST FOURNI « TEL QUEL », SANS GARANTIE D'AUCUNE SORTE, EXPRESSE
+OU IMPLICITE, Y COMPRIS MAIS SANS S'Y LIMITER LES GARANTIES DE QUALITÉ
+MARCHANDE, D'ADÉQUATION À UN USAGE PARTICULIER ET D'ABSENCE DE CONTREFAÇON.
+EN AUCUN CAS LES AUTEURS OU LES TITULAIRES DES DROITS D'AUTEUR NE SAURAIENT
+ÊTRE TENUS RESPONSABLES DE TOUT DOMMAGE, RÉCLAMATION OU AUTRE RESPONSABILITÉ,
+QUE CE SOIT DANS LE CADRE D'UN CONTRAT, D'UN DÉLIT OU AUTREMENT, DÉCOULANT DU
+LOGICIEL OU DE SON UTILISATION.
+
 ---
-Outil conçu par Claude PLONKA, inspiré des travaux de Florence Chatelot.
-text
-Copier
 
-
-
-
-
-
----
----
----
-## **📌 Récapitulatif des Fichiers Modifiés/Créés**
-| **Fichier** | **Action** | **Description** |
-|-------------|------------|----------------|
-| `spacy_tools.py` | **Nouveau** | Module pour l'intégration de spaCy (détection NER). |
-| `anonymizer.py` | **Modifié** | Intégration de `find_spacy_entities()` dans `analyze()`. |
-| `juritools.py` | **Modifié** | Mise à jour de `resolve_overlaps()` pour gérer les priorités spaCy. |
-| `requirements.txt` | **Modifié** | Ajout de `spacy>=3.7.0` et `lxml>=4.9.0`. |
-| `test_spacy_tools.py` | **Nouveau** | Tests unitaires pour valider spaCy. |
-| `README.md` | **Modifié** | Documentation pour l'installation de spaCy. |
-
----
-
----
----
-## **🚀 Prochaines Étapes**
-1. **Installer les dépendances** :
-   ```bash
-   pip install -r requirements.txt
-   python -m spacy download fr_core_news_sm
+Dépendances tierces : chaque bibliothèque conserve sa propre licence (voir
+requirements.txt). Le modèle spaCy fr_core_news_sm est téléchargé séparément
+et reste soumis à ses conditions d'utilisation.
