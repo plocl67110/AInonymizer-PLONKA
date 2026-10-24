@@ -88,5 +88,20 @@ class TestHardenedPII(unittest.TestCase):
         ms = find_structured_pii("IBAN FR76 3000 4000 0300\n1234 5678 901")
         self.assertTrue(any(m.category == "IBAN" for m in ms))
 
+    def test_libelles_administratifs_filtres(self):
+        from regex_fr import is_label_noise
+        self.assertTrue(is_label_noise("téléphone", "PERSONNE_MORALE"))
+        self.assertTrue(is_label_noise("TÉLÉPHONE", "PERSONNE_MORALE"))
+        self.assertTrue(is_label_noise("pour", "PERSONNE_MORALE"))
+        self.assertTrue(is_label_noise("adresse", "LIEU"))
+        self.assertTrue(is_label_noise("Dossier", "LIEU"))
+        self.assertTrue(is_label_noise("MADAME", "PERSONNE"))
+
+    def test_vrais_noms_conserves(self):
+        from regex_fr import is_label_noise
+        self.assertFalse(is_label_noise("Claire BERNARD", "PERSONNE"))
+        self.assertFalse(is_label_noise("Strasbourg", "LIEU"))
+        self.assertFalse(is_label_noise("Rhin-Moselle", "PERSONNE_MORALE"))
+
 if __name__ == "__main__":
     unittest.main()
