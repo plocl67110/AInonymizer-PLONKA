@@ -7,21 +7,25 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class IdentityKey:
-    """Stable key for an entity candidate.
+    """Clé stable d'un candidat d'entité (conservée pour compatibilité)."""
 
-    IMPORTANT: text normalization is only a candidate key. The caller should
-    resolve ambiguous same-name people using context/entity_id before calling
-    assign(). This class deliberately avoids silently merging unrelated people.
-    """
     category_family: str
     normalized: str
 
 
 class PseudoMap:
-    """Corpus-wide pseudonym map with conservative identity handling.
+    """Table de pseudonymes partagée par tout le corpus.
 
-    The map keeps the legacy assign(text, category) API, but also exposes
-    assign_identity() for callers that already resolved an entity identity.
+    Règles d'identité :
+    - un nom complet (« Julien MOREL ») identifie une personne ;
+    - un nom de famille seul (« MOREL ») n'est rattaché à une personne existante
+      que si celle-ci est la seule connue avec ce nom de famille ;
+    - deux homonymes ne sont jamais fusionnés ;
+    - un prénom seul n'est jamais rattaché à une personne.
+
+    Préfixes :
+    - avocats et magistrats gardent leur catégorie (AVOCAT_001, MAGISTRAT_001) ;
+    - les autres personnes utilisent PERSONNE_NNN.
     """
 
     _CATEGORY_FAMILY = {
@@ -44,63 +48,88 @@ class PseudoMap:
         "ADRESSE": "ADRESSE",
     }
 
+    # Catégories dont le rôle est conservé dans le préfixe du pseudonyme.
+    _VISIBLE_PREFIX = {"AVOCAT", "MAGISTRAT"}
+
     def __init__(self) -> None:
         self._identity_to_pseudo: dict[str, str] = {}
         self._pseudo_to_orig: dict[str, str] = {}
         self._pseudo_to_category: dict[str, str] = {}
-        self._norm_to_identity: dict[tuple[str, str], str] = {}
+        # Nom complet normalisé (ou nom de famille seul créé) -> identité
+        self._person_identity: dict[str, str] = {}
+        # Nom de famille -> identités des personnes connues avec ce nom
+        self._surname_index: dict[str, set[str]] = {}
         self._counters: dict[str, int] = {}
 
     def assign(self, text: str, category: str) -> str:
-        """Legacy deterministic assignment.
-
-        This remains safe for structured identifiers. For PERSONNE-like
-        entities, callers should prefer assign_identity() after resolution.
-        """
+        """Attribue un pseudonyme à un texte, selon sa catégorie."""
         family = self._family(category)
         normalized = self._normalize(text)
 
-        # Structured values are safe to key by normalized value.
         if family != "PERSONNE":
-            identity = f"{family}:{normalized}"
-            return self.assign_identity(identity, text, category)
+            return self.assign_identity(f"{family}:{normalized}", text, category)
 
-        # Legacy behavior for people: same exact normalized spelling remains
-        # coherent. It must not be used as proof that two same-name people are
-        # identical.
-        key = (family, normalized)
-        if key in self._norm_to_identity:
-            return self._identity_to_pseudo[self._norm_to_identity[key]]
-
-        identity = f"{family}:{normalized}"
-        self._norm_to_identity[key] = identity
+        identity = self._lookup_person(normalized)
+        if identity is None:
+            identity = self._create_person(normalized)
         return self.assign_identity(identity, text, category)
 
     def assign_identity(self, identity_id: str, text: str, category: str) -> str:
-        """Assign a pseudonym to an already-resolved entity identity."""
+        """Attribue un pseudonyme à une identité déjà résolue."""
         if identity_id in self._identity_to_pseudo:
             return self._identity_to_pseudo[identity_id]
 
         family = self._family(category)
-        n = self._counters.get(family, 0) + 1
-        self._counters[family] = n
-        pseudo = f"{family}_{n:03d}"
+        prefix = category if category in self._VISIBLE_PREFIX else family
+        n = self._counters.get(prefix, 0) + 1
+        self._counters[prefix] = n
+        pseudo = f"{prefix}_{n:03d}"
+
         self._identity_to_pseudo[identity_id] = pseudo
         self._pseudo_to_orig[pseudo] = text
         self._pseudo_to_category[pseudo] = category
         return pseudo
 
     def canonical_category(self, text: str) -> str | None:
-        normalized = self._normalize(text)
-        for (family, value), identity in self._norm_to_identity.items():
-            if value == normalized:
-                pseudo = self._identity_to_pseudo.get(identity)
-                if pseudo:
-                    return self._pseudo_to_category.get(pseudo)
-        return None
+        """Catégorie de la première occurrence de la personne, si elle est connue."""
+        identity = self._lookup_person(self._normalize(text))
+        if identity is None:
+            return None
+        pseudo = self._identity_to_pseudo.get(identity)
+        if pseudo is None:
+            return None
+        return self._pseudo_to_category.get(pseudo)
 
     def to_dict(self) -> dict[str, str]:
         return dict(self._pseudo_to_orig)
+
+    # ── Résolution des personnes ───────────────────────────────────────
+
+    def _lookup_person(self, normalized: str) -> str | None:
+        """Retrouve une identité sans en créer de nouvelle."""
+        if normalized in self._person_identity:
+            return self._person_identity[normalized]
+
+        tokens = normalized.split()
+        if len(tokens) == 1:
+            candidates = self._surname_index.get(normalized, set())
+            if len(candidates) == 1:
+                return next(iter(candidates))
+
+        return None
+
+    def _create_person(self, normalized: str) -> str:
+        """Crée une identité pour une forme jamais vue."""
+        identity = f"PERSONNE:{normalized}"
+        self._person_identity[normalized] = identity
+
+        tokens = normalized.split()
+        if len(tokens) >= 2:
+            self._surname_index.setdefault(tokens[-1], set()).add(identity)
+
+        return identity
+
+    # ── Utilitaires ────────────────────────────────────────────────────
 
     def _family(self, category: str) -> str:
         return self._CATEGORY_FAMILY.get(category, category)
