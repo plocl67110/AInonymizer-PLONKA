@@ -15,6 +15,7 @@ Les LLM (ChatGPT, Claude, Gemini…) sont utiles pour analyser des contrats, des
 3. Il écrit le texte pseudonymisé dans `output/`, avec une table de correspondance dans `output/mappings/`.
 
 La pseudonymisation est cohérente sur tout le corpus : une même entité reçoit toujours le même pseudonyme, y compris sur plusieurs documents traités ensemble.
+Les avocats et magistrats reçoivent un pseudonyme préfixé par leur rôle (`AVOCAT_001`, `MAGISTRAT_001`). Un nom de famille seul (« MOREL ») est rattaché à une personne connue sous ce nom, uniquement s'il n'existe qu'une seule personne de ce nom dans le corpus.
 
 
 ## Données détectées
