@@ -1540,6 +1540,51 @@ def find_communes(text: str) -> list[RawMatch]:
 # Détection globale
 # ============================================================================
 
+# ============================================================================
+# Libellés administratifs : jamais identifiants
+# ============================================================================
+
+# Mots du vocabulaire de procédure ou de formulaire, détectés à tort comme
+# personnes morales, lieux ou personnes. Comparaison sans accents, en minuscules.
+_LABEL_NOISE = {
+    "pour",
+    "madame",
+    "monsieur",
+    "mme",
+    "mr",
+    "telephone",
+    "tel",
+    "adresse",
+    "electronique",
+    "courriel",
+    "mail",
+    "dossier",
+    "demeurant",
+    "domicile",
+}
+
+_LABEL_NOISE_CATEGORIES = {
+    "PERSONNE",
+    "PERSONNE_MORALE",
+    "LIEU",
+    "COMMUNE",
+    "ADRESSE",
+}
+
+
+def is_label_noise(text: str, category: str) -> bool:
+    """Vrai si le texte est un libellé administratif détecté à tort."""
+    if category not in _LABEL_NOISE_CATEGORIES:
+        return False
+    folded = _strip_accents(text).strip(" :.,;").strip()
+    return folded in _LABEL_NOISE
+
+
+def filter_label_noise(matches: list[RawMatch]) -> list[RawMatch]:
+    """Retire les détections qui ne sont que des libellés administratifs."""
+    return [m for m in matches if not is_label_noise(m.text, m.category)]
+
+
 def find_all(text: str) -> list[RawMatch]:
     """
     Lance toutes les familles de détection.

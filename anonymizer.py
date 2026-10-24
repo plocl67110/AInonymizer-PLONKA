@@ -27,6 +27,7 @@ from regex_fr import (
     find_person_names,
     find_societes,
     find_structured_pii,
+    filter_label_noise,
 )
 
 # Intégration de spaCy pour la détection des entités nommées
@@ -295,6 +296,8 @@ def analyze(
         *specialized,
         *spacy_matches,
     ]
+
+    raw = filter_label_noise(raw)
 
     # ── Passe 2 : post-traitement juritools ─────────────────────────────
     raw = reclassify_dates(text, raw)
