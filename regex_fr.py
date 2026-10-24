@@ -410,7 +410,9 @@ _STRUCTURED: list[
     ),
 
     # ------------------------------------------------------------------
-    # IBAN
+    # IBAN : détection par forme, sans exiger le checksum mod-97.
+    # Un numéro mal formé ou tronqué doit quand même être protégé.
+    # Accepte espaces et sauts de ligne entre les groupes de 4.
     # ------------------------------------------------------------------
 
     (
@@ -418,13 +420,14 @@ _STRUCTURED: list[
         re.compile(
             r"(?<![A-Z0-9])"
             r"[A-Z]{2}\d{2}"
-            r"(?:[ ]?[A-Z0-9]){11,30}"
+            r"(?:\s?[A-Z0-9]{4}){2,7}"
+            r"(?:\s?[A-Z0-9]{1,3})?"
             r"(?![A-Z0-9])",
             re.IGNORECASE,
         ),
         None,
-        _validate_iban,
-        1.0,
+        None,
+        0.95,
     ),
 
     # ------------------------------------------------------------------

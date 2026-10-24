@@ -54,5 +54,39 @@ class TestHardenedPII(unittest.TestCase):
         ms = find_avocats("Maître Sophie LEMAIRE, avocate")
         self.assertTrue(any(m.text == "Sophie LEMAIRE" for m in ms))
 
+    def test_nom_de_famille_rattache_a_personne_unique(self):
+        pm = PseudoMap()
+        a = pm.assign("Julien MOREL", "PERSONNE")
+        b = pm.assign("MOREL", "PERSONNE")
+        self.assertEqual(a, b)
+
+    def test_homonymes_non_fusionnes(self):
+        pm = PseudoMap()
+        a = pm.assign("Julien MOREL", "PERSONNE")
+        c = pm.assign("Paul MOREL", "PERSONNE")
+        d = pm.assign("MOREL", "PERSONNE")
+        self.assertNotEqual(a, c)
+        self.assertNotEqual(a, d)
+        self.assertNotEqual(c, d)
+
+    def test_prenom_seul_non_rattache(self):
+        pm = PseudoMap()
+        a = pm.assign("Julien MOREL", "PERSONNE")
+        b = pm.assign("Julien", "PERSONNE")
+        self.assertNotEqual(a, b)
+
+    def test_avocat_prefixe_visible(self):
+        pm = PseudoMap()
+        p = pm.assign("Sophie LEMAIRE", "AVOCAT")
+        self.assertTrue(p.startswith("AVOCAT_"))
+
+    def test_iban_checksum_invalide_detecte(self):
+        ms = find_structured_pii("IBAN FR76 3000 4000 0300 1234 5678 901")
+        self.assertTrue(any(m.category == "IBAN" for m in ms))
+
+    def test_iban_saut_de_ligne_detecte(self):
+        ms = find_structured_pii("IBAN FR76 3000 4000 0300\n1234 5678 901")
+        self.assertTrue(any(m.category == "IBAN" for m in ms))
+
 if __name__ == "__main__":
     unittest.main()
