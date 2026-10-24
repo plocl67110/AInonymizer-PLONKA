@@ -9,9 +9,9 @@ Usage :
         python ainonymizer.py
 
 Sortie : dossier output/ créé à côté du script.
-  • {nom}_anonymise.md   — texte pseudonymisé (optimisé LLM)
-  • {nom}_mapping.json  — table pseudonyme → valeur originale
-  • corpus_mapping.json — table globale du corpus
+  • DOC_xxx_anonymise.md  — texte pseudonymisé (optimisé LLM), sans nom d'origine
+  • DOC_xxx_mapping.json  — table pseudonyme → valeur originale, et nom du fichier source
+  • mappings/corpus_mapping.json — table globale du corpus et correspondance DOC_xxx → fichier
 """
 from __future__ import annotations
 
@@ -56,15 +56,14 @@ def find_documents(input_dir: Path) -> list[Path]:
 _MULTI_BLANK = re.compile(r"\n{3,}")
 
 
-def _to_markdown(filename: str, anonymized_text: str) -> str:
+def _to_markdown(doc_id: str, anonymized_text: str) -> str:
     """
     Produit un Markdown propre pour consommation LLM.
-    - En-tête indiquant la source
+    - En-tête indiquant uniquement l'identifiant du document, jamais son nom d'origine
     - Texte avec pseudonymes entre crochets : [PERSONNE_001]
-    - Pas de métadonnées superflues
     """
     body = _MULTI_BLANK.sub("\n\n", anonymized_text).strip()
-    return f"# {filename}\n\n{body}\n"
+    return f"# {doc_id}\n\n{body}\n"
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -82,6 +81,7 @@ def _stats(entities: list[Entity]) -> str:
 
 def process(
     path: Path,
+    doc_id: str,
     pseudo_map: PseudoMap,
     output_dir: Path,
     mappings_dir: Path,
@@ -89,10 +89,10 @@ def process(
 ) -> dict[str, str]:
     """
     Extrait, analyse et pseudonymise un fichier.
-    Écrit les fichiers de sortie.
-    Retourne la table de correspondance du fichier (peut être vide si échec).
+    Les fichiers de sortie portent l'identifiant doc_id, jamais le nom d'origine.
+    Retourne la table de correspondance du fichier (vide si échec).
     """
-    print(f"  {path.name}")
+    print(f"  {path.name}  →  {doc_id}")
 
     try:
         text = extract(path)
@@ -104,25 +104,23 @@ def process(
         print("    ✗ texte vide — PDF scanné ou protégé ?")
         return {}
 
-    # disabled_categories reflète le choix explicite de l'utilisateur dans
-    # la GUI (y compris si Avocats/Magistrats a été coché pour être activé) ;
-    # analyze() est l'unique point qui détermine enabled, sans logique
-    # cachée en amont susceptible de contredire ce choix.
+    # disabled_categories reflète le choix explicite de l'utilisateur dans la GUI.
+    # analyze() est l'unique point qui détermine enabled.
     entities = analyze(text, pseudo_map, frozenset(disabled_categories))
     print(f"    {_stats(entities)}")
 
     anonymized = apply_pseudonyms(text, entities)
 
-    stem = path.stem
-    md_path = output_dir / f"{stem}_anonymise.md"
-    mapping_path = mappings_dir / f"{stem}_mapping.json"
+    md_path = output_dir / f"{doc_id}_anonymise.md"
+    mapping_path = mappings_dir / f"{doc_id}_mapping.json"
 
-    md_path.write_text(_to_markdown(path.name, anonymized), encoding="utf-8")
+    md_path.write_text(_to_markdown(doc_id, anonymized), encoding="utf-8")
 
     file_table: dict[str, str] = {
         e.pseudonym: e.text for e in entities if e.enabled
     }
     mapping_data = {
+        "doc_id": doc_id,
         "source": path.name,
         "date": str(date.today()),
         "entites": file_table,
@@ -165,9 +163,19 @@ def main() -> None:
     # PseudoMap partagée : garantit la cohérence cross-document
     pseudo_map = PseudoMap()
     corpus_table: dict[str, str] = {}
+    corpus_sources: dict[str, str] = {}
 
-    for path in docs:
-        file_table = process(path, pseudo_map, output_dir, mappings_dir, disabled_categories)
+    for index, path in enumerate(docs, start=1):
+        doc_id = f"DOC_{index:03d}"
+        corpus_sources[doc_id] = path.name
+        file_table = process(
+            path,
+            doc_id,
+            pseudo_map,
+            output_dir,
+            mappings_dir,
+            disabled_categories,
+        )
         corpus_table.update(file_table)
 
     corpus_path = mappings_dir / "corpus_mapping.json"
@@ -175,11 +183,8 @@ def main() -> None:
         json.dumps(
             {
                 "date": str(date.today()),
+                "documents": corpus_sources,
                 "entites": corpus_table,
-                "credits": (
-                    "Conçu gratuitement par Florence Chatelot, formatrice aux outils IA. "
-                    "Si cet outil vous est utile, offrez lui quelque chose : https://florence-chatelot.fr/stripe"
-                ),
             },
             ensure_ascii=False,
             indent=2,

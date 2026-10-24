@@ -65,7 +65,13 @@ python ainonymizer.py
 3. Une fenêtre s'ouvre : choisissez les catégories à pseudonymiser, puis cliquez sur **Lancer**.
 4. Récupérez les résultats dans `output/` :
 
-
+```
+output/
+  DOC_001_anonymise.md          texte pseudonymisé, destiné au LLM
+  mappings/
+    DOC_001_mapping.json        table pseudonymes → valeurs d'origine
+    corpus_mapping.json         table globale, avec la correspondance DOC_xxx → fichier source
+```
 
 
 ## Limitations
@@ -73,8 +79,8 @@ python ainonymizer.py
 - Les PDF scannés (images) ne sont pas traités : le texte doit être sélectionnable.
 - La détection repose sur des règles et un modèle généraliste. Elle peut manquer des données inhabituelles et produire des faux positifs sur des termes ambigus.
 - Une absence de détection ne prouve pas l'absence de données personnelles. Pour un usage avec un LLM, relisez les sorties, et ajoutez un contrôle résiduel.
-- Le nom du fichier d'origine peut apparaître dans l'en-tête du Markdown produit. Renommez vos fichiers avant traitement si ce nom contient une information personnelle.
 - Optimisé pour le français.
+- Les fichiers de `output/mappings/` contiennent les valeurs d'origine et la correspondance avec les fichiers sources. Ils restent locaux et ne doivent jamais être transmis à un LLM.
 
 ## Dépendances
 

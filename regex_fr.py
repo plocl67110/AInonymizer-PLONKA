@@ -185,7 +185,9 @@ def _validate_iban(s: str) -> bool:
 # différentes (ex: DATE vs DATE_NAISSANCE, EMAIL vs LIEU/PERSONNE partiels).
 # Alignée sur la table _PRIORITY d'anonymizer.py — à garder synchronisée si
 # l'une des deux évolue.
-_CATEGORY_PRIORITY = {
+# Table de priorités unique, partagée avec anonymizer.py.
+# Un LIEU ou une COMMUNE ne doit jamais écraser une personne détectée.
+CATEGORY_PRIORITY = {
     "EMAIL": 10,
     "DATE_NAISSANCE": 10,
     "AVOCAT": 9,
@@ -200,11 +202,14 @@ _CATEGORY_PRIORITY = {
     "PLAQUE": 6,
     "TEL": 5,
     "ADRESSE": 4,
-    "LIEU": 4,
-    "COMMUNE": 4,
     "PERSONNE": 3,
-    "DATE": 2,
+    "LIEU": 2,
+    "COMMUNE": 2,
+    "DATE": 1,
 }
+
+# Alias interne utilisé par _dedupe_overlaps.
+_CATEGORY_PRIORITY = CATEGORY_PRIORITY
 
 
 def _dedupe_overlaps(matches: list[RawMatch]) -> list[RawMatch]:

@@ -4,7 +4,6 @@ Pipeline d'anonymisation en 4 passes.
 from __future__ import annotations
 
 import re
-
 from dataclasses import dataclass
 
 from juritools import (
@@ -16,10 +15,9 @@ from juritools import (
     trim_particles,
 )
 from pseudo_map import PseudoMap
-
 from communes_fr import find_communes
-
 from regex_fr import (
+    CATEGORY_PRIORITY,
     RawMatch,
     find_adresses,
     find_avocats,
@@ -29,9 +27,7 @@ from regex_fr import (
     find_person_names,
     find_societes,
     find_structured_pii,
-
 )
-
 
 # Intégration de spaCy pour la détection des entités nommées
 from spacy_tools import find_spacy_entities
@@ -47,41 +43,16 @@ class Entity:
     enabled: bool
 
 
-# Catégories non substituées par défaut (délibération CNIL 01-057)
+# Catégories non pseudonymisées par défaut (délibération CNIL 01-057)
 DEFAULT_DISABLED_CATEGORIES: frozenset[str] = frozenset(
     {"AVOCAT", "MAGISTRAT"}
 )
 
 
-# Priorité de déduplication (score plus haut = gagne en cas de chevauchement)
-_PRIORITY: dict[str, float] = {
-    "DATE_NAISSANCE": 10,
-    "EMAIL": 10,
+# Priorité de déduplication : table unique, définie dans regex_fr.py.
+# Un LIEU ou une COMMUNE ne doit jamais écraser une personne détectée.
+_PRIORITY: dict[str, float] = CATEGORY_PRIORITY
 
-    "AVOCAT": 9,
-    "MAGISTRAT": 9,
-
-    "JURIDICTION": 8,
-    "PERSONNE_MORALE": 7,
-    "NUM_DOSSIER": 7,
-
-    "NIR": 6,
-    "IBAN": 6,
-    "SIREN": 6,
-    "SIRET": 6,
-    "PLAQUE": 6,
-
-    "TEL": 5,
-
-    "ADRESSE": 4,
-
-    # Une détection LIEU ne doit jamais écraser une personne
-    # explicitement détectée par les règles spécialisées.
-    "LIEU": 2,
-
-    "PERSONNE": 3,
-    "DATE": 1,
-}
 
 def _dedupe(matches: list[RawMatch]) -> list[RawMatch]:
     """
@@ -93,13 +64,10 @@ def _dedupe(matches: list[RawMatch]) -> list[RawMatch]:
       3. longueur du match ;
       4. position dans le texte.
 
-    Contrairement à une déduplication purement gauche-à-droite, cette
-    stratégie permet par exemple à :
+    Cette stratégie permet par exemple de conserver AVOCAT pour :
 
         "Maître Dupont" -> PERSONNE (spaCy)
         "Dupont"        -> AVOCAT   (regex spécialisée)
-
-    de conserver AVOCAT, qui est la classification la plus précise.
     """
 
     candidates = sorted(
@@ -128,6 +96,7 @@ def _dedupe(matches: list[RawMatch]) -> list[RawMatch]:
 
     return kept
 
+
 def analyze(
     text: str,
     pseudo_map: PseudoMap,
@@ -137,17 +106,16 @@ def analyze(
     Analyse le texte et retourne la liste des entités avec leurs pseudonymes.
 
     pseudo_map est partagé entre tous les documents du corpus pour garantir
-    la cohérence cross-document (même entité → même pseudonyme).
+    la cohérence cross-document (même entité -> même pseudonyme).
 
     disabled_categories est l'unique point de contrôle du statut
     activé/désactivé.
     """
 
-    # ── Passe 1 : détection spécialisée ──────────────────────────────────
+    # ── Passe 1 : détection spécialisée ─────────────────────────────────
     #
-    # Les détecteurs regex/domaines juridiques sont considérés comme
-    # prioritaires pour les personnes. spaCy intervient ensuite comme
-    # complément.
+    # Les détecteurs regex et juridiques sont prioritaires pour les personnes.
+    # spaCy intervient ensuite en complément.
     specialized: list[RawMatch] = [
         *find_structured_pii(text),
         *find_adresses(text),
@@ -160,21 +128,14 @@ def analyze(
         *find_communes(text),
     ]
 
-    # ── Protection contre les faux LIEU de spaCy ─────────────────────────
+    # ── Protection contre les faux LIEU et PERSONNE_MORALE de spaCy ─────
     #
-    # fr_core_news_sm peut classer à tort un nom de personne comme LIEU.
-    # Exemple observé :
-    #
-    #   "M. Dupont"
-    #        regex -> PERSONNE
-    #        spaCy  -> LIEU
-    #
-    # Une détection spécialisée de personne doit donc protéger son span
-    # contre une détection spaCy contradictoire en LIEU.
+    # fr_core_news_sm peut classer à tort un nom de personne comme LIEU :
+    #   "M. Dupont" -> regex PERSONNE, spaCy LIEU
+    # Un span détecté par un détecteur spécialisé est donc protégé contre
+    # une détection spaCy contradictoire, sauf pour les dates.
     spacy_matches = find_spacy_entities(text)
 
-    # Les détecteurs spécialisés sont prioritaires sur spaCy.
-    # Les dates spaCy restent autorisées comme complément.
     spacy_matches = [
         m
         for m in spacy_matches
@@ -185,17 +146,11 @@ def analyze(
         )
     ]
 
-
-
     # Protection contre les faux PERSONNE_MORALE de spaCy.
     #
-    # Exemple :
-    #   "Orange du dossier" -> spaCy: PERSONNE_MORALE
-    #
-    # Les détections spécialisées restent prioritaires :
-    #   "Orange SAS"
-    #   "Orange SA"
-    #   "société Orange"
+    # Exemple : "Orange du dossier" -> spaCy PERSONNE_MORALE.
+    # Un nom ambigu n'est conservé que s'il est précédé ou suivi d'un
+    # contexte sociétaire explicite.
 
     _AMBIGUOUS_COMPANY_NAMES = {
         "orange",
@@ -250,8 +205,8 @@ def analyze(
             filtered_spacy.append(m)
             continue
 
-        # Nom ambigu sans contexte sociétaire :
-        # laisser les détecteurs spécialisés décider.
+        # Nom ambigu sans contexte sociétaire : les détecteurs spécialisés
+        # décident.
         continue
 
     spacy_matches = filtered_spacy
@@ -259,16 +214,9 @@ def analyze(
     # Protection contre les faux LIEU spaCy correspondant à des communes
     # lexicalement ambiguës.
     #
-    # Exemples :
-    #   "Sens du jugement"  -> "Sens" n'est pas un lieu
-    #   "Foix du dossier"   -> "Foix" n'est pas forcément un lieu
-    #
-    # En revanche :
-    #   "à Sens"
-    #   "à Foix"
-    #   "demeurant aux Fins"
-    #   "commune de Fins"
-    # doivent rester détectés par communes_fr.
+    # Exemples : "Sens du jugement", "Foix du dossier".
+    # En revanche "à Sens", "à Foix", "commune de Fins" doivent rester
+    # détectés par communes_fr.
 
     ambiguous_communes = {
         "fins",
@@ -289,7 +237,7 @@ def analyze(
         "val",
     }
 
-    filtered_spacy: list[RawMatch] = []
+    filtered_spacy = []
 
     for m in spacy_matches:
         if m.category != "LIEU":
@@ -324,6 +272,7 @@ def analyze(
         filtered_spacy.append(m)
 
     spacy_matches = filtered_spacy
+
     protected_persons = [
         m
         for m in specialized
@@ -347,7 +296,7 @@ def analyze(
         *spacy_matches,
     ]
 
-    # ── Passe 2 : post-traitement juritools ──────────────────────────────
+    # ── Passe 2 : post-traitement juritools ─────────────────────────────
     raw = reclassify_dates(text, raw)
     raw = flag_doubtful_entities(raw)
     raw = [*raw, *cross_reference_physico_morale(raw)]
@@ -360,19 +309,16 @@ def analyze(
 
     # ── Passe 4 : assignation des pseudonymes ───────────────────────────
     #
-    # Traité dans l'ordre du texte (deduped est trié par position) afin que
-    # la première occurrence d'une entité fixe sa catégorie canonique.
+    # Traité dans l'ordre du texte (deduped est trié par position) : la
+    # première occurrence d'une entité fixe sa catégorie canonique.
     entities: list[Entity] = []
 
     for m in deduped:
-        # La catégorie canonique (celle de la première occurrence de cette
-        # entité, potentiellement dans un autre document du corpus) prime
-        # sur la catégorie de CE match précis.
+        # La catégorie canonique (celle de la première occurrence, éventuellement
+        # dans un autre document du corpus) prime sur la catégorie de ce match.
         #
-        # Cela garantit qu'une même personne n'est jamais pseudonymisée
-        # dans une occurrence et laissée en clair dans une autre au sein
-        # du même document, et qu'elle ne reçoit jamais deux pseudonymes
-        # différents.
+        # Une même personne n'est ainsi jamais pseudonymisée dans une occurrence
+        # et laissée en clair dans une autre, et ne reçoit jamais deux pseudonymes.
         canonical_category = (
             pseudo_map.canonical_category(m.text) or m.category
         )
@@ -420,8 +366,3 @@ def apply_pseudonyms(
     parts.append(text[pos:])
 
     return "".join(parts)
-
-
-
-
-

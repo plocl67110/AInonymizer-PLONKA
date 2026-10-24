@@ -51,3 +51,4 @@ mappings/
 # Sauvegardes et fichiers de travail
 *.bak
 *.tmp
+resultat_*.txt
