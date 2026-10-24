@@ -1,4 +1,4 @@
-﻿"""
+"""
 Pipeline d'anonymisation en 4 passes.
 """
 from __future__ import annotations
@@ -33,7 +33,7 @@ from regex_fr import (
 )
 
 
-# IntÃ©gration de spaCy pour la dÃ©tection des entitÃ©s nommÃ©es
+# Intégration de spaCy pour la détection des entités nommées
 from spacy_tools import find_spacy_entities
 
 
@@ -47,13 +47,13 @@ class Entity:
     enabled: bool
 
 
-# CatÃ©gories non substituÃ©es par dÃ©faut (dÃ©libÃ©ration CNIL 01-057)
+# Catégories non substituées par défaut (délibération CNIL 01-057)
 DEFAULT_DISABLED_CATEGORIES: frozenset[str] = frozenset(
     {"AVOCAT", "MAGISTRAT"}
 )
 
 
-# PrioritÃ© de dÃ©duplication (score plus haut = gagne en cas de chevauchement)
+# Priorité de déduplication (score plus haut = gagne en cas de chevauchement)
 _PRIORITY: dict[str, float] = {
     "DATE_NAISSANCE": 10,
     "EMAIL": 10,
@@ -75,8 +75,8 @@ _PRIORITY: dict[str, float] = {
 
     "ADRESSE": 4,
 
-    # Une dÃ©tection LIEU ne doit jamais Ã©craser une personne
-    # explicitement dÃ©tectÃ©e par les rÃ¨gles spÃ©cialisÃ©es.
+    # Une détection LIEU ne doit jamais écraser une personne
+    # explicitement détectée par les règles spécialisées.
     "LIEU": 2,
 
     "PERSONNE": 3,
@@ -85,21 +85,21 @@ _PRIORITY: dict[str, float] = {
 
 def _dedupe(matches: list[RawMatch]) -> list[RawMatch]:
     """
-    Supprime les chevauchements en privilÃ©giant l'entitÃ© la plus pertinente.
+    Supprime les chevauchements en privilégiant l'entité la plus pertinente.
 
-    PrioritÃ© :
-      1. catÃ©gorie mÃ©tier la plus prioritaire ;
+    Priorité :
+      1. catégorie métier la plus prioritaire ;
       2. confiance ;
       3. longueur du match ;
       4. position dans le texte.
 
-    Contrairement Ã  une dÃ©duplication purement gauche-Ã -droite, cette
-    stratÃ©gie permet par exemple Ã  :
+    Contrairement à une déduplication purement gauche-à-droite, cette
+    stratégie permet par exemple à :
 
-        "MaÃ®tre Dupont" -> PERSONNE (spaCy)
-        "Dupont"        -> AVOCAT   (regex spÃ©cialisÃ©e)
+        "Maître Dupont" -> PERSONNE (spaCy)
+        "Dupont"        -> AVOCAT   (regex spécialisée)
 
-    de conserver AVOCAT, qui est la classification la plus prÃ©cise.
+    de conserver AVOCAT, qui est la classification la plus précise.
     """
 
     candidates = sorted(
@@ -134,20 +134,20 @@ def analyze(
     disabled_categories: frozenset[str] = DEFAULT_DISABLED_CATEGORIES,
 ) -> list[Entity]:
     """
-    Analyse le texte et retourne la liste des entitÃ©s avec leurs pseudonymes.
+    Analyse le texte et retourne la liste des entités avec leurs pseudonymes.
 
-    pseudo_map est partagÃ© entre tous les documents du corpus pour garantir
-    la cohÃ©rence cross-document (mÃªme entitÃ© â†’ mÃªme pseudonyme).
+    pseudo_map est partagé entre tous les documents du corpus pour garantir
+    la cohérence cross-document (même entité → même pseudonyme).
 
-    disabled_categories est l'unique point de contrÃ´le du statut
-    activÃ©/dÃ©sactivÃ©.
+    disabled_categories est l'unique point de contrôle du statut
+    activé/désactivé.
     """
 
-    # â”€â”€ Passe 1 : dÃ©tection spÃ©cialisÃ©e â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Passe 1 : détection spécialisée ──────────────────────────────────
     #
-    # Les dÃ©tecteurs regex/domaines juridiques sont considÃ©rÃ©s comme
+    # Les détecteurs regex/domaines juridiques sont considérés comme
     # prioritaires pour les personnes. spaCy intervient ensuite comme
-    # complÃ©ment.
+    # complément.
     specialized: list[RawMatch] = [
         *find_structured_pii(text),
         *find_adresses(text),
@@ -160,17 +160,17 @@ def analyze(
         *find_communes(text),
     ]
 
-    # â”€â”€ Protection contre les faux LIEU de spaCy â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Protection contre les faux LIEU de spaCy ─────────────────────────
     #
-    # fr_core_news_sm peut classer Ã  tort un nom de personne comme LIEU.
-    # Exemple observÃ© :
+    # fr_core_news_sm peut classer à tort un nom de personne comme LIEU.
+    # Exemple observé :
     #
     #   "M. Dupont"
     #        regex -> PERSONNE
     #        spaCy  -> LIEU
     #
-    # Une dÃ©tection spÃ©cialisÃ©e de personne doit donc protÃ©ger son span
-    # contre une dÃ©tection spaCy contradictoire en LIEU.
+    # Une détection spécialisée de personne doit donc protéger son span
+    # contre une détection spaCy contradictoire en LIEU.
     spacy_matches = find_spacy_entities(text)
 
     # Les détecteurs spécialisés sont prioritaires sur spaCy.
@@ -347,7 +347,7 @@ def analyze(
         *spacy_matches,
     ]
 
-    # â”€â”€ Passe 2 : post-traitement juritools â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Passe 2 : post-traitement juritools ──────────────────────────────
     raw = reclassify_dates(text, raw)
     raw = flag_doubtful_entities(raw)
     raw = [*raw, *cross_reference_physico_morale(raw)]
@@ -355,24 +355,24 @@ def analyze(
     raw = [*raw, *find_orthographic_variants(text, raw)]
     raw = trim_particles(text, raw)
 
-    # â”€â”€ Passe 3 : dÃ©duplication â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Passe 3 : déduplication ─────────────────────────────────────────
     deduped = _dedupe(raw)
 
-    # â”€â”€ Passe 4 : assignation des pseudonymes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Passe 4 : assignation des pseudonymes ───────────────────────────
     #
-    # TraitÃ© dans l'ordre du texte (deduped est triÃ© par position) afin que
-    # la premiÃ¨re occurrence d'une entitÃ© fixe sa catÃ©gorie canonique.
+    # Traité dans l'ordre du texte (deduped est trié par position) afin que
+    # la première occurrence d'une entité fixe sa catégorie canonique.
     entities: list[Entity] = []
 
     for m in deduped:
-        # La catÃ©gorie canonique (celle de la premiÃ¨re occurrence de cette
-        # entitÃ©, potentiellement dans un autre document du corpus) prime
-        # sur la catÃ©gorie de CE match prÃ©cis.
+        # La catégorie canonique (celle de la première occurrence de cette
+        # entité, potentiellement dans un autre document du corpus) prime
+        # sur la catégorie de CE match précis.
         #
-        # Cela garantit qu'une mÃªme personne n'est jamais pseudonymisÃ©e
-        # dans une occurrence et laissÃ©e en clair dans une autre au sein
-        # du mÃªme document, et qu'elle ne reÃ§oit jamais deux pseudonymes
-        # diffÃ©rents.
+        # Cela garantit qu'une même personne n'est jamais pseudonymisée
+        # dans une occurrence et laissée en clair dans une autre au sein
+        # du même document, et qu'elle ne reçoit jamais deux pseudonymes
+        # différents.
         canonical_category = (
             pseudo_map.canonical_category(m.text) or m.category
         )
@@ -402,7 +402,7 @@ def apply_pseudonyms(
     text: str,
     entities: list[Entity],
 ) -> str:
-    """Remplace les entitÃ©s actives par leurs pseudonymes dans le texte."""
+    """Remplace les entités actives par leurs pseudonymes dans le texte."""
     enabled = sorted(
         (e for e in entities if e.enabled),
         key=lambda e: e.start,
