@@ -30,3 +30,24 @@ Thumbs.db
 
 # Résultats de tests locaux
 .pytest_cache/
+
+# Données locales de conciliation : jamais publiques
+noms_locaux.txt
+noms_*.txt
+registre_*.csv
+*_mapping.json
+corpus_mapping.json
+mappings/
+*_anonymise.md
+
+# Tableurs et exports de suivi
+*.xlsx
+*.xls
+*.ods
+*.csv
+
+!data/communes2026.csv
+
+# Sauvegardes et fichiers de travail
+*.bak
+*.tmp
