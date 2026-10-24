@@ -16,7 +16,7 @@ tout en garantissant la **cohérence cross-document** (une même PII est toujour
 
 ### 1. Cloner le dépôt
 ```bash
-git clone https://github.com/votre-depot/ainonymizer.git
+git clone https://github.com/plocl67110/AInonymizer-PLONKA.git
 cd ainonymizer
 
 Ne pas considérer l'absence de match comme une preuve d'absence de PII : pour une utilisation
