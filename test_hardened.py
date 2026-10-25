@@ -129,5 +129,30 @@ class TestHardenedPII(unittest.TestCase):
         self.assertTrue(is_label_noise("la SCI", "PERSONNE"))
         self.assertFalse(is_label_noise("la Caisse", "PERSONNE"))
 
+    def test_homonymes_date_naissance_distincte(self):
+        pm = PseudoMap()
+        a = pm.assign_person("Antoine MARCHAND", "PERSONNE", "4 février 1972")
+        b = pm.assign_person("Antoine MARCHAND", "PERSONNE", "19 novembre 1990")
+        self.assertNotEqual(a, b)
+
+    def test_meme_personne_meme_naissance(self):
+        pm = PseudoMap()
+        a = pm.assign_person("Antoine MARCHAND", "PERSONNE", "4 février 1972")
+        b = pm.assign_person("antoine marchand", "PERSONNE", "4 février 1972")
+        self.assertEqual(a, b)
+
+    def test_nom_sans_naissance_rattache_si_unique(self):
+        pm = PseudoMap()
+        a = pm.assign_person("Antoine MARCHAND", "PERSONNE", "4 février 1972")
+        b = pm.assign_person("Antoine MARCHAND", "PERSONNE")
+        self.assertEqual(a, b)
+
+    def test_nom_sans_naissance_ambigu_non_rattache(self):
+        pm = PseudoMap()
+        a = pm.assign_person("Antoine MARCHAND", "PERSONNE", "4 février 1972")
+        b = pm.assign_person("Antoine MARCHAND", "PERSONNE", "19 novembre 1990")
+        c = pm.assign_person("Antoine MARCHAND", "PERSONNE")
+        self.assertNotIn(c, {a, b})
+
 if __name__ == "__main__":
     unittest.main()

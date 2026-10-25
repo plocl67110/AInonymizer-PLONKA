@@ -334,22 +334,42 @@ def analyze(
     #
     # Traité dans l'ordre du texte (deduped est trié par position) : la
     # première occurrence d'une entité fixe sa catégorie canonique.
+   
     entities: list[Entity] = []
 
+    _PERSON_CATS = {"PERSONNE", "AVOCAT", "MAGISTRAT"}
+    _BIRTH_WINDOW = 200
+
+    people = [m for m in deduped if m.category in _PERSON_CATS]
+    births = [m for m in deduped if m.category == "DATE_NAISSANCE"]
+
+    def _birth_for(person: RawMatch) -> str | None:
+        """Date de naissance qui suit immédiatement le nom, sans autre personne entre les deux."""
+        for b in births:
+            if person.end <= b.start <= person.end + _BIRTH_WINDOW:
+                if any(
+                    p is not person and person.end <= p.start < b.start
+                    for p in people
+                ):
+                    return None
+                return b.text
+        return None
+
     for m in deduped:
-        # La catégorie canonique (celle de la première occurrence, éventuellement
-        # dans un autre document du corpus) prime sur la catégorie de ce match.
-        #
-        # Une même personne n'est ainsi jamais pseudonymisée dans une occurrence
-        # et laissée en clair dans une autre, et ne reçoit jamais deux pseudonymes.
+        birth = _birth_for(m) if m.category in _PERSON_CATS else None
+
         canonical_category = (
-            pseudo_map.canonical_category(m.text) or m.category
+            pseudo_map.canonical_category(m.text, birth) or m.category
         )
 
-        pseudonym = pseudo_map.assign(
-            m.text,
-            canonical_category,
-        )
+        if canonical_category in _PERSON_CATS:
+            pseudonym = pseudo_map.assign_person(
+                m.text,
+                canonical_category,
+                birth,
+            )
+        else:
+            pseudonym = pseudo_map.assign(m.text, canonical_category)
 
         entities.append(
             Entity(
