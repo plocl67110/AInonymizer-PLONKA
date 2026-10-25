@@ -154,5 +154,11 @@ class TestHardenedPII(unittest.TestCase):
         c = pm.assign_person("Antoine MARCHAND", "PERSONNE")
         self.assertNotIn(c, {a, b})
 
+    def test_non_capturee_puis_datee_non_fusionnees(self):
+        pm = PseudoMap()
+        a = pm.assign_person("Antoine MARCHAND", "PERSONNE", None)
+        b = pm.assign_person("Antoine MARCHAND", "PERSONNE", "19 novembre 1990")
+        self.assertNotEqual(a, b)
+
 if __name__ == "__main__":
     unittest.main()

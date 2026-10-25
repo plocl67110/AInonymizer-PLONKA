@@ -159,12 +159,7 @@ class PseudoMap:
 
         # Première occurrence avec date de naissance, pour une personne déjà vue
         # sans date : rattachement seulement s'il n'y a qu'une seule personne.
-        unknown = [c for c in known if self._birth_of.get(c) is None]
-        if len(known) == 1 and len(unknown) == 1:
-            if mutate:
-                self._birth_of[unknown[0]] = birth
-            return unknown[0]
-
+        
         return None
 
     def _compatible(self, identity: str, birth: str | None) -> bool:

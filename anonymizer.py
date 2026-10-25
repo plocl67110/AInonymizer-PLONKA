@@ -335,6 +335,7 @@ def analyze(
     # Traité dans l'ordre du texte (deduped est trié par position) : la
     # première occurrence d'une entité fixe sa catégorie canonique.
    
+    
     entities: list[Entity] = []
 
     _PERSON_CATS = {"PERSONNE", "AVOCAT", "MAGISTRAT"}
@@ -343,20 +344,27 @@ def analyze(
     people = [m for m in deduped if m.category in _PERSON_CATS]
     births = [m for m in deduped if m.category == "DATE_NAISSANCE"]
 
-    def _birth_for(person: RawMatch) -> str | None:
-        """Date de naissance qui suit immédiatement le nom, sans autre personne entre les deux."""
-        for b in births:
-            if person.end <= b.start <= person.end + _BIRTH_WINDOW:
-                if any(
-                    p is not person and person.end <= p.start < b.start
-                    for p in people
-                ):
-                    return None
-                return b.text
-        return None
+    def _gap(a: RawMatch, b: RawMatch) -> int:
+        if a.end <= b.start:
+            return b.start - a.end
+        if b.end <= a.start:
+            return a.start - b.end
+        return 0
+
+    # Chaque date de naissance est rattachée à la personne la plus proche,
+    # qu'elle la précède ou la suive. Une date ne va jamais à deux personnes.
+    birth_of: dict[int, str] = {}
+    for b in births:
+        best: tuple[int, RawMatch] | None = None
+        for p in people:
+            g = _gap(p, b)
+            if g <= _BIRTH_WINDOW and (best is None or g < best[0]):
+                best = (g, p)
+        if best is not None:
+            birth_of.setdefault(id(best[1]), b.text)
 
     for m in deduped:
-        birth = _birth_for(m) if m.category in _PERSON_CATS else None
+        birth = birth_of.get(id(m)) if m.category in _PERSON_CATS else None
 
         canonical_category = (
             pseudo_map.canonical_category(m.text, birth) or m.category
