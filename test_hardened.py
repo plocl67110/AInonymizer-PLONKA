@@ -111,5 +111,23 @@ class TestHardenedPII(unittest.TestCase):
         ms = find_societes("Dossier RG 2026/00317. Société SARL Boulangerie Dupuis")
         self.assertFalse(any(m.text.startswith("2026") for m in ms))
 
+    def test_rib_sans_prefixe_detecte(self):
+        ms = find_structured_pii("compte 30004 00820 00012345678 90, ouvert")
+        self.assertTrue(any(m.category == "RIB" for m in ms))
+
+    def test_societe_non_classee_personne(self):
+        ms = find_person_names("SCI Jean-Marc Immobilier")
+        self.assertFalse(any("SCI" in m.text for m in ms))
+
+    def test_forme_juridique_non_personne(self):
+        from regex_fr import is_label_noise
+        self.assertTrue(is_label_noise("SCI", "PERSONNE"))
+        self.assertFalse(is_label_noise("Jean-Marc", "PERSONNE"))
+
+    def test_article_devant_forme_juridique(self):
+        from regex_fr import is_label_noise
+        self.assertTrue(is_label_noise("la SCI", "PERSONNE"))
+        self.assertFalse(is_label_noise("la Caisse", "PERSONNE"))
+
 if __name__ == "__main__":
     unittest.main()

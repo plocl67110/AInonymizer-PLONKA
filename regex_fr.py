@@ -197,6 +197,7 @@ CATEGORY_PRIORITY = {
     "NUM_DOSSIER": 7,
     "NIR": 6,
     "IBAN": 6,
+    "RIB": 6,
     "SIREN": 6,
     "SIRET": 6,
     "PLAQUE": 6,
@@ -428,6 +429,18 @@ _STRUCTURED: list[
         None,
         None,
         0.95,
+    ),
+
+    (
+        "RIB",
+        re.compile(
+            r"(?<![\dA-Z])"
+            r"\d{5}\s?\d{5}\s?[0-9A-Z]{11}\s?\d{2}"
+            r"(?!\d)"
+        ),
+        None,
+        None,
+        0.9,
     ),
 
     # ------------------------------------------------------------------
@@ -1136,6 +1149,11 @@ _PERSON_STOPWORDS = {
     "PARAGRAPHE",
 }
 
+_COMPANY_FORM_WORDS = {
+    "SAS", "SASU", "SARL", "EURL", "SA", "SCI", "SCP", "SCM", "SNC", "GIE",
+    "SELARL", "SELAS", "SEL", "SELAFA", "SELCA", "GAEC", "EARL", "SCA",
+    "SCIC", "SCOP",
+}
 
 def _is_person_stopword(text: str) -> bool:
     words = _norm_upper(text).split()
@@ -1180,6 +1198,9 @@ def find_person_names(text: str) -> list[RawMatch]:
         prenom = match.group(2)
 
         if _is_person_stopword(nom):
+            continue
+
+        if _strip_accents(nom).upper() in _COMPANY_FORM_WORDS:
             continue
 
         if _strip_accents(prenom) in _NOT_FIRSTNAME:
@@ -1559,6 +1580,19 @@ _LABEL_NOISE = {
     "courriel",
     "mail",
     "dossier",
+    "sci",
+    "sarl",
+    "sas",
+    "sasu",
+    "eurl",
+    "snc",
+    "scp",
+    "scm",
+    "gie",
+    "gaec",
+    "earl",
+    "scop",
+    "scic",
     "demeurant",
     "domicile",
 }
@@ -1576,9 +1610,10 @@ def is_label_noise(text: str, category: str) -> bool:
     """Vrai si le texte est un libellé administratif détecté à tort."""
     if category not in _LABEL_NOISE_CATEGORIES:
         return False
-    folded = _strip_accents(text).strip(" :.,;").strip()
+    folded = _strip_accents(text).strip(" :.,;").strip().lower()
+    # Retire un article en tête : « la SCI » devient « sci ».
+    folded = re.sub(r"^(?:la|le|les|l|une|un|du|de|des|d)\s+", "", folded)
     return folded in _LABEL_NOISE
-
 
 def filter_label_noise(matches: list[RawMatch]) -> list[RawMatch]:
     """Retire les détections qui ne sont que des libellés administratifs."""
