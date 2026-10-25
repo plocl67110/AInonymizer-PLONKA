@@ -187,15 +187,15 @@ _PROC_CTX = re.compile(
 )
 
 # Contexte pour les dates de naissance/décès (à anonymiser)
+
 _BIRTH_CTX = re.compile(
-    r"(?:n[ée]{1,2}\s+le|date\s+de\s+naissance|[âa]g[ée]{1,2}\s+de)\s*[:,]?\s*$",
+    r"(?<!\w)(?:n[ée]{1,2}\s+le|date\s+de\s+naissance|[âa]g[ée]{1,2}\s+de)\s*[:,]?\s*$",
     re.IGNORECASE,
 )
 _DEATH_CTX = re.compile(
-    r"(?:d[ée]c[ée]d[ée]{1,2}\s+le|date\s+(?:du\s+)?d[ée]c[èe]s)\s*[:,]?\s*$",
+    r"(?<!\w)(?:d[ée]c[ée]d[ée]{1,2}\s+le|date\s+(?:du\s+)?d[ée]c[èe]s)\s*[:,]?\s*$",
     re.IGNORECASE,
 )
-
 def flag_doubtful_entities(matches: list[RawMatch]) -> list[RawMatch]:
     """
     Filtre les entités manifestement douteuses.

@@ -160,5 +160,23 @@ class TestHardenedPII(unittest.TestCase):
         b = pm.assign_person("Antoine MARCHAND", "PERSONNE", "19 novembre 1990")
         self.assertNotEqual(a, b)
 
+    def test_signature_non_naissance(self):
+        from juritools import reclassify_dates
+        from regex_fr import RawMatch
+        text = "Monsieur Antoine MARCHAND a signé le 2 mars 2026."
+        start = text.index("2 mars")
+        m = RawMatch(start, len(text) - 1, "2 mars 2026", "DATE", 0.9, "test")
+        out = reclassify_dates(text, [m])
+        self.assertEqual(out[0].category, "DATE")
+
+    def test_naissance_reclassee(self):
+        from juritools import reclassify_dates
+        from regex_fr import RawMatch
+        text = "Antoine MARCHAND, né le 4 février 1972."
+        start = text.index("4 février")
+        m = RawMatch(start, len(text) - 1, "4 février 1972", "DATE", 0.9, "test")
+        out = reclassify_dates(text, [m])
+        self.assertEqual(out[0].category, "DATE_NAISSANCE")
+
 if __name__ == "__main__":
     unittest.main()
