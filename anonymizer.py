@@ -336,6 +336,7 @@ def analyze(
     # première occurrence d'une entité fixe sa catégorie canonique.
    
     
+    
     entities: list[Entity] = []
 
     _PERSON_CATS = {"PERSONNE", "AVOCAT", "MAGISTRAT"}
@@ -351,10 +352,16 @@ def analyze(
             return a.start - b.end
         return 0
 
-    # Chaque date de naissance est rattachée à la personne la plus proche,
-    # qu'elle la précède ou la suive. Une date ne va jamais à deux personnes.
+    def _is_birth_context(b: RawMatch) -> bool:
+        before = text[max(0, b.start - 25):b.start].casefold()
+        return bool(re.search(r"\b(?:né|née|naissance)\b[^.;]*$", before))
+
+    # 1. Une date de naissance n'est retenue que si elle suit « né » ou « naissance ».
+    #    Elle est rattachée à la personne la plus proche.
     birth_of: dict[int, str] = {}
     for b in births:
+        if not _is_birth_context(b):
+            continue
         best: tuple[int, RawMatch] | None = None
         for p in people:
             g = _gap(p, b)
@@ -363,8 +370,23 @@ def analyze(
         if best is not None:
             birth_of.setdefault(id(best[1]), b.text)
 
+    # 2. Dates connues par nom dans ce document.
+    doc_births: dict[str, dict[str, str]] = {}
+    for p in people:
+        b = birth_of.get(id(p))
+        if b:
+            key = pseudo_map._normalize(p.text)
+            doc_births.setdefault(key, {})[pseudo_map._normalize_birth(b)] = b
+
+    # 3. Attribution : date propre ; sinon la date unique du nom dans le document.
     for m in deduped:
-        birth = birth_of.get(id(m)) if m.category in _PERSON_CATS else None
+        birth: str | None = None
+        if m.category in _PERSON_CATS:
+            birth = birth_of.get(id(m))
+            if birth is None:
+                known = doc_births.get(pseudo_map._normalize(m.text), {})
+                if len(known) == 1:
+                    birth = next(iter(known.values()))
 
         canonical_category = (
             pseudo_map.canonical_category(m.text, birth) or m.category
@@ -390,7 +412,8 @@ def analyze(
             )
         )
 
-    entities.sort(key=lambda e: e.start)
+    entities.sort(key=lambda e: e.start)   
+
 
     return entities
 
