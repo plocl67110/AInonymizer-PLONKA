@@ -103,5 +103,13 @@ class TestHardenedPII(unittest.TestCase):
         self.assertFalse(is_label_noise("Strasbourg", "LIEU"))
         self.assertFalse(is_label_noise("Rhin-Moselle", "PERSONNE_MORALE"))
 
+    def test_avocate_prenom_minuscule(self):
+        ms = find_avocats("Me lucie GARNIER, avocate au Barreau")
+        self.assertTrue(any(m.text == "lucie GARNIER" for m in ms))
+
+    def test_societe_ne_commence_pas_par_chiffre(self):
+        ms = find_societes("Dossier RG 2026/00317. Société SARL Boulangerie Dupuis")
+        self.assertFalse(any(m.text.startswith("2026") for m in ms))
+
 if __name__ == "__main__":
     unittest.main()

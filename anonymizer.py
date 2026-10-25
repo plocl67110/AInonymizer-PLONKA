@@ -4,7 +4,7 @@ Pipeline d'anonymisation en 4 passes.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from juritools import (
     cross_reference_physico_morale,
@@ -298,6 +298,26 @@ def analyze(
     ]
 
     raw = filter_label_noise(raw)
+
+    # Une personne ne peut pas être découpée par une « personne morale » :
+    # « ROUSSEL » dans « Marc ROUSSEL » est une partie de la personne, pas une société.
+    # Un nom de famille seul qui correspond à une personne connue est traité comme
+    # une personne, afin que la table de pseudonymes décide du rattachement.
+    _PERSON_CATS = {"PERSONNE", "AVOCAT", "MAGISTRAT"}
+    _persons = [m for m in raw if m.category in _PERSON_CATS]
+    _surnames = {
+        p.text.split()[-1] for p in _persons if len(p.text.split()) >= 2
+    }
+
+    _fixed: list[RawMatch] = []
+    for m in raw:
+        if m.category == "PERSONNE_MORALE":
+            if any(p.start <= m.start and m.end <= p.end for p in _persons):
+                continue
+            if m.text.strip() in _surnames:
+                m = replace(m, category="PERSONNE")
+        _fixed.append(m)
+    raw = _fixed
 
     # ── Passe 2 : post-traitement juritools ─────────────────────────────
     raw = reclassify_dates(text, raw)

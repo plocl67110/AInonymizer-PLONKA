@@ -759,7 +759,7 @@ _FORMES = (
 
 _SOC_NAME = (
     r"(?:"
-    r"[A-ZÀ-ÖØ-Þ0-9]"
+    r"[A-ZÀ-ÖØ-Þ]"
     r"[A-Za-zÀ-ÿ0-9&'’./-]{2,50}"
     r"(?:"
     r"[ \t'-]+"
@@ -1229,7 +1229,7 @@ def find_person_names(text: str) -> list[RawMatch]:
 _AVOCAT = [
 
     re.compile(
-        rf"\b(?i:Maître|Me)[ \t]+({_NAME})"
+        rf"\b(?i:Maître|Me)[ \t]+((?:[\w'’\-]+[ \t]+)?[A-ZÀ-ÖØ-ÞŸ][\w'’\-]+)"
     ),
 
     re.compile(
