@@ -74,6 +74,11 @@ output/
     corpus_mapping.json         table globale, avec la correspondance DOC_xxx → fichier source
 ```
 
+### Réinjection locale (optionnel)
+
+`reinjecter.py` remplace les pseudonymes d'une réponse de LLM par les valeurs d'origine, à partir de la table de correspondance de la même exécution. Le fichier restauré contient des données personnelles : il reste sur votre poste, et ne doit jamais être versionné.
+
+    python reinjecter.py chemin\reponse.md
 
 ## Limitations
 
