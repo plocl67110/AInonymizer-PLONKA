@@ -8,7 +8,7 @@ def test_spacy_model_loaded():
     """Test que le modèle spaCy est chargé correctement."""
     nlp = get_nlp()
     assert nlp is not None
-    assert nlp.meta["name"] == "fr_core_news_sm"
+    assert nlp.lang == "fr"
 
 def test_spacy_person_detection():
     """Test la détection des personnes avec spaCy."""

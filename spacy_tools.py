@@ -8,6 +8,14 @@ Compléments adaptés au français juridique :
 - DATE -> DATE
 - MISC correspondant à une société -> PERSONNE_MORALE
 - dates françaises non détectées par spaCy -> DATE
+
+Modifications principales :
+- chargement spaCy allégé et plus sûr ;
+- scores de confiance différenciés par catégorie ;
+- détection de sociétés corrigée avec frontières de mots ;
+- listes de filtrage moins agressives ;
+- dates françaises élargies ;
+- filtre optionnel par seuil de confiance.
 """
 
 from __future__ import annotations
@@ -27,93 +35,194 @@ _MODEL_NAME = "fr_core_news_sm"
 _NLP: Optional[spacy.Language] = None
 
 
+# ---------------------------------------------------------------------------
+# Correspondance entre labels spaCy et catégories internes
+# ---------------------------------------------------------------------------
+
 _SPACY_TO_CATEGORY = {
     "PER": "PERSONNE",
     "PERSON": "PERSONNE",
-
     "ORG": "PERSONNE_MORALE",
-
     "LOC": "LIEU",
     "GPE": "LIEU",
-
     "DATE": "DATE",
 }
 
-# Labels/acronymes administratifs et civilités isolées que le petit modèle
-# fr_core_news_sm étiquette parfois à tort comme entité nommée, en général
-# quand ils précèdent (et non chevauchent) la vraie valeur structurée
-# (ex: "IBAN : FR76..." -> "IBAN" seul taggé LIEU). Comparaison faite sur
-# le texte normalisé (accents retirés, casse ignorée, point final ignoré).
+
+# Scores de confiance différenciés.
+# spaCy ne fournit pas de score fiable par entité : ces valeurs sont
+# volontairement prudentes et doivent pouvoir être filtrées ensuite.
+_CONFIDENCE_BY_CATEGORY = {
+    "PERSONNE": 0.75,
+    "PERSONNE_MORALE": 0.70,
+    "LIEU": 0.70,
+    "DATE": 0.90,
+}
+
+
+# Sigles pouvant être légitimes dans un nom de société ou une référence.
+_ACRONYMES_AUTORISES = {
+    "SA",
+    "SAS",
+    "SARL",
+    "SNC",
+    "SEL",
+    "SELARL",
+    "SCP",
+    "EURL",
+    "SCA",
+    "SCI",
+}
+
+
+# ---------------------------------------------------------------------------
+# Normalisation
+# ---------------------------------------------------------------------------
+
+def _normaliser(text: str) -> str:
+    """
+    Normalise une chaîne pour comparaison :
+    - minuscules ;
+    - suppression des accents ;
+    - espaces multiples réduits ;
+    - ponctuation de bord retirée.
+    """
+    texte = unicodedata.normalize("NFD", text.strip().casefold())
+    texte = "".join(
+        c for c in texte
+        if unicodedata.category(c) != "Mn"
+    )
+    return " ".join(texte.split()).strip(" .,:;()[]")
+
+
+# ---------------------------------------------------------------------------
+# Labels, acronymes et civilités mal détectés par spaCy
+# ---------------------------------------------------------------------------
+
 _SPACY_STOPWORDS = {
-    "iban", "siren", "siret", "nir", "rib", "tva", "rg", "kbis", "cerfa",
-    "rcs", "urssaf", "cnil", "rgpd", "ntic", "n", "no", "ref",
-    "monsieur", "madame", "mademoiselle", "maitre", "docteur",
-    "professeur", "avocat", "avocats", "avocate", "avocates",
-    "magistrat", "magistrate", "magistrats", "magistrates",
-    "m", "mme", "mlle", "pr", "dr",
-    # Mots capitalisés (début de phrase, titre de section, référence de
-    # pièce) que le modèle confond parfois avec un nom propre — repérés
-    # sur des documents juridiques OCRisés réels.
-    "audience", "annexe", "piece", "or", "force", "chambre", "prejudice",
-    "proximite", "contre",
+    "iban",
+    "siren",
+    "siret",
+    "nir",
+    "rib",
+    "tva",
+    "kbis",
+    "cerfa",
+    "rcs",
+    "urssaf",
+    "cnil",
+    "rgpd",
+    "ref",
+    "réf",
+    "monsieur",
+    "madame",
+    "mademoiselle",
+    "maître",
+    "maitre",
+    "docteur",
+    "professeur",
+    "avocat",
+    "avocate",
+    "avocats",
+    "avocates",
+    "magistrat",
+    "magistrate",
+    "magistrats",
+    "magistrates",
+    "m",
+    "mme",
+    "mlle",
+    "pr",
+    "dr",
+    "annexe",
+    "pièce",
+    "piece",
 }
 
 
 def _is_spacy_stopword(text: str) -> bool:
-    normalized = "".join(
-        c for c in unicodedata.normalize("NFD", text.strip().casefold())
-        if unicodedata.category(c) != "Mn"
-    ).rstrip(".:")
-    if normalized in _SPACY_STOPWORDS:
+    """
+    Élimine les labels, acronymes et civilités isolées que spaCy peut
+    étiqueter à tort comme entité nommée.
+    """
+    valeur = _normaliser(text)
+
+    if valeur in _SPACY_STOPWORDS:
         return True
-    # Variante avec un numéro à la suite (ex: "Annexe 9", "Pièce n°12").
-    first_word = re.split(r"\s+", normalized, maxsplit=1)[0]
-    rest = normalized[len(first_word):].strip()
-    if first_word in _SPACY_STOPWORDS and re.fullmatch(r"(?:n[°o]?\s*)?\d+", rest):
+
+    mots = valeur.split()
+
+    if not mots:
         return True
+
+    premier = mots[0]
+    reste = " ".join(mots[1:])
+
+    # Exemples : "Annexe 9", "Pièce n°12", "Annexe n° 3".
+    if premier in {"annexe", "pièce", "piece"} and re.fullmatch(
+        r"(?:n[°o]?\s*)?\d+",
+        reste,
+    ):
+        return True
+
     return False
 
 
 # ---------------------------------------------------------------------------
-# Bruit évident produit par spaCy (fragments courts, acronymes, titres)
+# Bruit évident produit par spaCy ou l’OCR
 # ---------------------------------------------------------------------------
 
 _SPACY_NOISE = {
-    "audience", "conclusions", "préjudice", "prejudice", "annexe",
-    "section", "défendeur", "defendeur", "demande", "déclarer",
-    "declarer", "proximité", "proximite", "fiche", "ttc",
+    "audience",
+    "conclusions",
+    "préjudice",
+    "prejudice",
+    "annexe",
+    "section",
+    "défendeur",
+    "defendeur",
+    "demande",
+    "déclarer",
+    "declarer",
+    "proximité",
+    "proximite",
+    "fiche",
+    "ttc",
 }
 
 
 def _is_spacy_noise(text: str) -> bool:
     """
-    Élimine certains faux positifs évidents de fr_core_news_sm : mots
-    juridiques/titres connus, acronymes très courts (TTC), et fragments
-    de 1-2 caractères issus de l'OCR.
+    Élimine les fragments OCR, mots juridiques fréquents et acronymes
+    très courts, sauf les sigles de sociétés explicitement autorisés.
     """
-    normalized = " ".join(text.casefold().split()).strip(" .,:;()[]")
+    valeur = _normaliser(text)
 
-    if not normalized:
+    if not valeur:
         return True
 
-    if normalized in _SPACY_NOISE:
+    if valeur in _SPACY_NOISE:
         return True
 
     compact = re.sub(r"[^A-Za-zÀ-ÿ]", "", text)
 
-    # Acronymes très courts comme TTC.
-    if len(compact) <= 3 and compact.isupper():
-        return True
-
     # Fragments OCR ou tokens trop courts.
     if len(compact) <= 2:
+        return True
+
+    # Acronymes très courts, sauf sigles de sociétés autorisés.
+    if (
+        len(compact) <= 3
+        and compact.isupper()
+        and compact not in _ACRONYMES_AUTORISES
+    ):
         return True
 
     return False
 
 
 # ---------------------------------------------------------------------------
-# Faux positifs juridiques / OCR observés sur des documents réels
+# Faux positifs juridiques / OCR observés
 # ---------------------------------------------------------------------------
 
 _SPACY_FALSE_POSITIVE_RE = re.compile(
@@ -123,45 +232,86 @@ _SPACY_FALSE_POSITIVE_RE = re.compile(
     r"|courriel\s+europ"
     r"|sur\s+l['’]"
     r"|l['’]absence"
-    r"|qu['’]’il"
+    r"|qu['’]il"
     r"|puisqu['’]"
     r")$",
     re.IGNORECASE,
 )
 
-# Mots courants / juridiques que le petit modèle peut classer à tort comme
-# PERSONNE ou LIEU. Cette liste correspond aux faux positifs observés sur
-# des documents OCR de référence (beaucoup sont aussi de vraies communes
-# françaises — voir le filtre équivalent, plus général, dans communes_fr.py).
+
+# Mots parfois mal classés par fr_core_news_sm.
+# Les termes ambigus pouvant aussi être des noms propres — par exemple
+# "Chambre", "Force", "Or", "Contre" — ne sont plus rejetés automatiquement.
 _SPACY_LEGAL_WORDS = {
-    "contre", "estimant", "passage", "fors", "celle", "grave", "omet",
-    "bonne", "force", "faux", "elfe", "eiles", "jui", "four", "ondes",
-    "chambre", "titre", "frais", "cesse",
+    "estimant",
+    "passage",
+    "fors",
+    "celle",
+    "omet",
+    "bonne",
+    "faux",
+    "elfe",
+    "eiles",
+    "jui",
+    "titre",
+    "frais",
+    "cesse",
 }
 
 
-def _is_spacy_false_positive(text: str) -> bool:
-    """Élimine des faux positifs juridiques/OCR explicitement identifiés."""
-    value = " ".join(text.casefold().split()).strip(" .,:;()[]")
+_CONTEXTES_LEGITIMES = (
+    "commune de",
+    "mairie de",
+    "société",
+    "societe",
+    "association",
+    "entreprise",
+    "cabinet",
+    "monsieur",
+    "madame",
+    "m.",
+    "mme",
+)
 
-    if not value:
+
+def _is_spacy_false_positive(
+    text: str,
+    full_text: str,
+    start: int,
+    end: int,
+) -> bool:
+    """
+    Élimine les faux positifs juridiques/OCR, sauf si un contexte
+    légitime est présent à proximité.
+    """
+    valeur = _normaliser(text)
+
+    if not valeur:
         return True
 
-    if _SPACY_FALSE_POSITIVE_RE.match(value):
+    if _SPACY_FALSE_POSITIVE_RE.match(valeur):
         return True
 
-    if value in _SPACY_LEGAL_WORDS:
-        return True
+    if valeur not in _SPACY_LEGAL_WORDS:
+        return False
 
-    return False
+    fenetre = full_text[
+        max(0, start - 80):min(len(full_text), end + 80)
+    ].casefold()
+
+    return not any(
+        contexte in fenetre
+        for contexte in _CONTEXTES_LEGITIMES
+    )
 
 
-# Catégories pour lesquelles un vrai nom propre français commence toujours
-# par une majuscule. Sur du texte OCR bruité, le petit modèle fr_core_news_sm
-# hallucine fréquemment des entités sur des mots minuscules ordinaires
-# (pronoms, adjectifs, verbes...) — cette contrainte élimine cette classe
-# entière de faux positifs sans toucher DATE, qui n'a pas cette propriété.
-_REQUIRES_CAPITAL = {"PERSONNE", "PERSONNE_MORALE", "LIEU"}
+# Catégories pour lesquelles une entité légitime commence normalement
+# par une majuscule.
+_REQUIRES_CAPITAL = {
+    "PERSONNE",
+    "PERSONNE_MORALE",
+    "LIEU",
+}
 
 
 def _starts_with_capital(text: str) -> bool:
@@ -179,14 +329,22 @@ _MONTHS_FR = (
     r"décembre|decembre"
 )
 
+
 _DATE_FR_RE = re.compile(
-    rf"\b"
-    rf"(?:"
-    rf"\d{{1,2}}\s+(?:{_MONTHS_FR})\s+\d{{4}}"
-    rf"|"
-    rf"\d{{1,2}}[/-]\d{{1,2}}[/-]\d{{2,4}}"
-    rf")"
-    rf"\b",
+    r"\b(?:"
+    # 14 novembre 2026, 1er janvier 2026, 14 novembre
+    r"\d{1,2}(?:er)?\s+(?:"
+    + _MONTHS_FR +
+    r")(?:\s+\d{4})?"
+    r"|"
+    # janvier 2026
+    r"(?:"
+    + _MONTHS_FR +
+    r")\s+\d{4}"
+    r"|"
+    # 14/11/2026, 14-11-26
+    r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}"
+    r")\b",
     re.IGNORECASE,
 )
 
@@ -196,18 +354,14 @@ _DATE_FR_RE = re.compile(
 # ---------------------------------------------------------------------------
 
 _COMPANY_CONTEXT_RE = re.compile(
-    r"(?:"
-    r"société\s+|"
-    r"societe\s+|"
-    r"entreprise\s+|"
-    r"cabinet\s+|"
-    r"association\s+|"
-    r"compagnie\s+|"
-    r"groupe\s+|"
-    r"établissement\s+|"
-    r"etablissement\s+|"
-    r"organisme\s+"
-    r")$",
+    r"(?:société|societe|entreprise|cabinet|association|"
+    r"compagnie|groupe|établissement|etablissement|organisme)\s+$",
+    re.IGNORECASE,
+)
+
+
+_COMPANY_SUFFIX_RE = re.compile(
+    r"\b(?:SAS|SARL|SA|SNC|SEL|SELARL|SCP|EURL|SCA|SCI|CIE)\b",
     re.IGNORECASE,
 )
 
@@ -221,35 +375,16 @@ def _looks_like_company(
     Détermine si une entité MISC est vraisemblablement une société.
 
     Exemples :
-        société Martin & Cie
-        Martin & Cie SAS
-        Martin & Cie
+    - société Martin & Cie
+    - Martin & Cie SAS
+    - Cabinet Durand
     """
+    prefix = full_text[max(0, start - 60):start]
 
-    prefix = full_text[max(0, start - 50):start]
-
-    # "société Martin & Cie"
     if _COMPANY_CONTEXT_RE.search(prefix):
         return True
 
-    upper = entity_text.upper()
-
-    # Formes / indices fréquents dans les noms de sociétés.
-    company_markers = (
-        "& CIE",
-        " CIE",
-        " SAS",
-        " SARL",
-        " SA",
-        " SNC",
-        " SEL",
-        " SELARL",
-        " SCP",
-        " EURL",
-        " SCA",
-    )
-
-    return any(marker in upper for marker in company_markers)
+    return bool(_COMPANY_SUFFIX_RE.search(entity_text))
 
 
 # ---------------------------------------------------------------------------
@@ -262,22 +397,19 @@ def get_nlp() -> spacy.Language:
 
     Le modèle est chargé une seule fois.
     """
-
     global _NLP
 
     if _NLP is None:
         try:
             _NLP = spacy.load(
                 _MODEL_NAME,
-                disable=["parser", "tagger"],
+                exclude=[
+                    "parser",
+                    "tagger",
+                    "attribute_ruler",
+                    "lemmatizer",
+                ],
             )
-
-            # spaCy 3.8 expose "core_news_sm" dans meta["name"],
-            # alors que le package installé est fr_core_news_sm.
-            #
-            # Le projet utilise le nom complet du modèle.
-            _NLP.meta["name"] = _MODEL_NAME
-
         except OSError as e:
             raise RuntimeError(
                 "Modèle spaCy français non trouvé. "
@@ -285,6 +417,18 @@ def get_nlp() -> spacy.Language:
                 "  python -m spacy download fr_core_news_sm\n"
                 f"Erreur originale : {e}"
             ) from e
+        except ValueError:
+            # Certaines versions de spaCy n'acceptent pas "exclude"
+            # pour tous les composants : repli sur "disable".
+            _NLP = spacy.load(
+                _MODEL_NAME,
+                disable=[
+                    "parser",
+                    "tagger",
+                    "attribute_ruler",
+                    "lemmatizer",
+                ],
+            )
 
     return _NLP
 
@@ -295,13 +439,12 @@ def get_nlp() -> spacy.Language:
 
 def find_spacy_entities(text: str) -> list[RawMatch]:
     """
-    Détecte les entités nommées dans le texte.
+    Détecte les entités nommées dans un texte français.
 
-    SpaCy est utilisé comme détecteur principal.
-    Des règles complémentaires couvrent certains cas français
-    insuffisamment détectés par fr_core_news_sm.
+    spaCy est utilisé comme détecteur principal.
+    Des règles complémentaires couvrent certaines dates françaises
+    insuffisamment détectées par fr_core_news_sm.
     """
-
     nlp = get_nlp()
     doc = nlp(text)
 
@@ -313,7 +456,6 @@ def find_spacy_entities(text: str) -> list[RawMatch]:
 
     for ent in doc.ents:
         label = ent.label_
-
         category = _SPACY_TO_CATEGORY.get(label)
 
         # Le modèle français sm classe parfois une société en MISC.
@@ -331,12 +473,15 @@ def find_spacy_entities(text: str) -> list[RawMatch]:
         if _is_spacy_stopword(ent.text):
             continue
 
-        # Bruit juridique / OCR évident (acronymes courts, fragments...).
         if _is_spacy_noise(ent.text):
             continue
 
-        # Faux positifs juridiques/OCR explicitement observés.
-        if _is_spacy_false_positive(ent.text):
+        if _is_spacy_false_positive(
+            ent.text,
+            text,
+            ent.start_char,
+            ent.end_char,
+        ):
             continue
 
         if category in _REQUIRES_CAPITAL and not _starts_with_capital(ent.text):
@@ -348,7 +493,7 @@ def find_spacy_entities(text: str) -> list[RawMatch]:
                 end=ent.end_char,
                 text=ent.text,
                 category=category,
-                confidence=0.95,
+                confidence=_CONFIDENCE_BY_CATEGORY[category],
                 source="spacy",
             )
         )
@@ -357,27 +502,22 @@ def find_spacy_entities(text: str) -> list[RawMatch]:
     # 2. Dates françaises complémentaires
     # ------------------------------------------------------------------
 
-    existing_date_spans = {
-        (m.start, m.end)
-        for m in matches
-        if m.category == "DATE"
-    }
-
     for match in _DATE_FR_RE.finditer(text):
         start = match.start()
         end = match.end()
 
-        # Déjà détectée par spaCy.
-        if (start, end) in existing_date_spans:
+        # Déjà détectée exactement par spaCy.
+        if any(
+            m.category == "DATE" and m.start == start and m.end == end
+            for m in matches
+        ):
             continue
 
         # Ne pas créer de chevauchement avec une autre entité.
-        overlaps = any(
+        if any(
             start < existing.end and existing.start < end
             for existing in matches
-        )
-
-        if overlaps:
+        ):
             continue
 
         matches.append(
@@ -391,8 +531,30 @@ def find_spacy_entities(text: str) -> list[RawMatch]:
             )
         )
 
-    # Toujours retourner dans l'ordre du texte.
+    # Toujours retourner dans l’ordre du texte.
     return sorted(
         matches,
         key=lambda m: (m.start, m.end),
     )
+
+
+# ---------------------------------------------------------------------------
+# Filtre par seuil
+# ---------------------------------------------------------------------------
+
+def find_spacy_entities_filtered(
+    text: str,
+    seuil: float = 0.70,
+) -> list[RawMatch]:
+    """
+    Retourne uniquement les entités dont la confiance est supérieure
+    ou égale au seuil indiqué.
+
+    Pour un usage juridique prudent, un seuil de 0,70 à 0,75 est un bon
+    point de départ.
+    """
+    return [
+        m
+        for m in find_spacy_entities(text)
+        if m.confidence >= seuil
+    ]
